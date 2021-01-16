@@ -1,0 +1,9 @@
+id=nethunter-binaries
+name=Kali NetHunter ARM(64) Binaries
+version=0.1
+versionCode=0010
+author=kimocoder <christian@aircrack-ng.org>
+description=Static ARM binaries for Android built with the NDK
+support=https://www.github.com/kimocoder/magisk_nethunter_binaries
+donate=nope
+template=1500
