@@ -31,16 +31,14 @@ class HeaderMap(object):
             elif magic == k_header_magic_BE:
                 endian_code = '>'
             else:
-                raise SystemExit("error: %s: not a headermap" % (
-                        path,))
+                raise SystemExit(f"error: {path}: not a headermap")
 
             # Read the header information.
-            header_fmt = endian_code + 'HHIIII'
+            header_fmt = f'{endian_code}HHIIII'
             header_size = struct.calcsize(header_fmt)
             data = f.read(header_size)
             if len(data) != header_size:
-                raise SystemExit("error: %s: truncated headermap header" % (
-                        path,))
+                raise SystemExit(f"error: {path}: truncated headermap header")
 
             (version, reserved, strtable_offset, num_entries,
              num_buckets, max_value_len) = struct.unpack(header_fmt, data)
@@ -49,21 +47,18 @@ class HeaderMap(object):
                 raise SystemExit("error: %s: unknown headermap version: %r" % (
                         path, version))
             if reserved != 0:
-                raise SystemExit("error: %s: invalid reserved value in header" % (
-                        path,))
+                raise SystemExit(f"error: {path}: invalid reserved value in header")
 
             # The number of buckets must be a power of two.
             if num_buckets == 0 or (num_buckets & num_buckets - 1) != 0:
-                raise SystemExit("error: %s: invalid number of buckets" % (
-                        path,))
+                raise SystemExit(f"error: {path}: invalid number of buckets")
 
             # Read all of the buckets.
-            bucket_fmt = endian_code + 'III'
+            bucket_fmt = f'{endian_code}III'
             bucket_size = struct.calcsize(bucket_fmt)
             buckets_data = f.read(num_buckets * bucket_size)
             if len(buckets_data) != num_buckets * bucket_size:
-                raise SystemExit("error: %s: truncated headermap buckets" % (
-                        path,))
+                raise SystemExit(f"error: {path}: truncated headermap buckets")
             buckets = [struct.unpack(bucket_fmt,
                                      buckets_data[i*bucket_size:(i+1)*bucket_size])
                        for i in range(num_buckets)]
@@ -76,16 +71,13 @@ class HeaderMap(object):
             f.seek(strtable_offset)
 
             if strtable_size == 0:
-                raise SystemExit("error: %s: unable to read zero-sized string table"%(
-                        path,))
+                raise SystemExit(f"error: {path}: unable to read zero-sized string table")
             strtable = f.read(strtable_size)
 
             if len(strtable) != strtable_size:
-                raise SystemExit("error: %s: unable to read complete string table"%(
-                        path,))
+                raise SystemExit(f"error: {path}: unable to read complete string table")
             if strtable[-1] != '\0':
-                raise SystemExit("error: %s: invalid string table in headermap" % (
-                        path,))
+                raise SystemExit(f"error: {path}: invalid string table in headermap")
 
             return HeaderMap(num_entries, buckets, strtable)
 
@@ -96,8 +88,7 @@ class HeaderMap(object):
 
     def get_string(self, idx):
         if idx >= len(self.strtable):
-            raise SystemExit("error: %s: invalid string index" % (
-                    path,))
+            raise SystemExit(f"error: {path}: invalid string index")
         end_idx = self.strtable.index('\0', idx)
         return self.strtable[idx:end_idx]
 
@@ -129,7 +120,7 @@ def action_dump(name, args):
     hmap = HeaderMap.frompath(path)
 
     # Dump all of the buckets.
-    print ('Header Map: %s' % (path,))
+    print(f'Header Map: {path}')
     if opts.verbose:
         print ('headermap: %r' % (path,))
         print ('  num entries: %d' % (hmap.num_entries,))
@@ -151,7 +142,7 @@ def action_dump(name, args):
     else:
         mappings = sorted(hmap.mappings)
         for key,value in mappings:
-            print ("%s -> %s" % (key, value))
+            print(f"{key} -> {value}")
     print ()
 
 def next_power_of_two(value):
@@ -178,8 +169,7 @@ def action_write(name, args):
     mappings = input_data['mappings']
     num_buckets = next_power_of_two(len(mappings) * 3)
 
-    table = [(0, 0, 0)
-             for i in range(num_buckets)]
+    table = [(0, 0, 0) for _ in range(num_buckets)]
     max_value_len = 0
     strtable = "\0"
     for key,value in mappings.items():
@@ -191,7 +181,7 @@ def action_write(name, args):
 
         key_idx = len(strtable)
         strtable += key + '\0'
-        prefix = os.path.dirname(value) + '/'
+        prefix = f'{os.path.dirname(value)}/'
         suffix = os.path.basename(value)
         prefix_idx = len(strtable)
         strtable += prefix + '\0'
@@ -210,9 +200,9 @@ def action_write(name, args):
     endian_code = '<'
     magic = k_header_magic_LE
     magic_size = 4
-    header_fmt = endian_code + 'HHIIII'
+    header_fmt = f'{endian_code}HHIIII'
     header_size = struct.calcsize(header_fmt)
-    bucket_fmt = endian_code + 'III'
+    bucket_fmt = f'{endian_code}III'
     bucket_size = struct.calcsize(bucket_fmt)
     strtable_offset = magic_size + header_size + num_buckets * bucket_size
     header = (1, 0, strtable_offset, len(mappings),
@@ -245,39 +235,47 @@ def action_tovfs(name, args):
 
     hmap = HeaderMap.frompath(input_path)
 
-    # Create the table for all the objects.
-    vfs = {}
-    vfs['version'] = 0
     build_dir_contents = []
-    vfs['roots'] = [{
-            'name' : opts.build_path,
-            'type' : 'directory',
-            'contents' : build_dir_contents }]
-
+    vfs = {
+        'version': 0,
+        'roots': [
+            {
+                'name': opts.build_path,
+                'type': 'directory',
+                'contents': build_dir_contents,
+            }
+        ],
+    }
     # We assume we are mapping framework paths, so a key of "Foo/Bar.h" maps to
     # "<build path>/Foo.framework/Headers/Bar.h".
-    for key,value in hmap.mappings:
+    for key, value in hmap.mappings:
         # If this isn't a framework style mapping, ignore it.
         components = key.split('/')
         if len(components) != 2:
             continue
         framework_name,header_name = components
-        build_dir_contents.append({
-                'name' : '%s.framework/Headers/%s' % (framework_name,
-                                                      header_name),
-                'type' : 'file',
-                'external-contents' : value })
+        build_dir_contents.append(
+            {
+                'name': f'{framework_name}.framework/Headers/{header_name}',
+                'type': 'file',
+                'external-contents': value,
+            }
+        )
 
     with open(output_path, 'w') as f:
         json.dump(vfs, f, indent=2)
 
-commands = dict((name[7:].replace("_","-"), f)
-                for name,f in locals().items()
-                if name.startswith('action_'))
+commands = {
+    name[7:].replace("_", "-"): f
+    for name, f in locals().items()
+    if name.startswith('action_')
+}
 
 def usage():
-    print ("Usage: %s command [options]" % (
-        os.path.basename(sys.argv[0])), file=sys.stderr)
+    print(
+        f"Usage: {os.path.basename(sys.argv[0])} command [options]",
+        file=sys.stderr,
+    )
     print (file=sys.stderr)
     print ("Available commands:", file=sys.stderr)
     cmds_width = max(map(len, commands))
